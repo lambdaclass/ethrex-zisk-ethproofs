@@ -1,9 +1,11 @@
-use std::{env, path::Path, time::Instant};
+use std::{env, path::Path, sync::Arc, time::Instant};
 
-use alloy_provider::ReqwestProvider;
+use alloy_provider::{network::Ethereum, RootProvider};
 use anyhow::{anyhow, Ok, Result};
-use rsp_client_executor::ChainVariant;
-use rsp_host_executor::HostExecutor;
+use reth_chainspec::ChainSpec;
+use rsp_host_executor::EthHostExecutor;
+use rsp_primitives::genesis::Genesis;
+use rsp_rpc_db::RpcDb;
 use url::Url;
 
 use crate::INPUT_FOLDER;
@@ -11,17 +13,27 @@ use crate::INPUT_FOLDER;
 /// Generate the input file for the given block number and return the time taken in milliseconds
 pub async fn generate_input_file(block_number: u64) -> Result<u128> {
     // Load RPC URL from environment variable
-    let rpc_url = env::var("RPC_URL").expect("RPC_URL must be set");
+    let rpc_url = Url::parse(env::var("RPC_URL").unwrap().as_str()).expect("RPC_URL must be set");
 
     // Create a new host executor
-    let provider = ReqwestProvider::new_http(Url::parse(&rpc_url)?);
-    let host_executor = HostExecutor::new(provider);
+    let provider = RootProvider::<Ethereum>::new_http(rpc_url);
+    let rpc_db = RpcDb::new(provider.clone(), block_number - 1);
+    let genesis = &Genesis::Mainnet;
+    let chain_spec: Arc<ChainSpec> = Arc::new(genesis.try_into().unwrap());
+    let host_executor = EthHostExecutor::eth(chain_spec.clone(), None);
 
     let start = Instant::now();
 
     // Execute the host to get the client input
     let client_input = match host_executor
-        .execute(block_number, ChainVariant::Ethereum)
+        .execute(
+            block_number,
+            &rpc_db,
+            &provider,
+            genesis.clone(),
+            None,
+            false,
+        )
         .await
     {
         std::result::Result::Ok(client_input) => client_input,

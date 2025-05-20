@@ -28,6 +28,10 @@ struct CliArgs {
     #[arg(short, long)]
     no_ethproofs: bool,
 
+    /// Disable proof generation, only generate input file
+    #[arg(short = 'p', long)]
+    no_proof: bool,
+
     /// Send telegram alert when block is submitted to ethproofs
     #[arg(short, long)]
     block_submit_alert: bool,
@@ -69,7 +73,7 @@ async fn main() -> Result<()> {
     let args = CliArgs::parse();
 
     // Determine if we should submit proofs to ethproofs
-    let ethproofs_submit = !args.no_ethproofs;
+    let ethproofs_submit = !args.no_ethproofs && !args.no_proof;
 
     // Modulus used to select the blocks to prove
     let block_modulus: u64 = env::var("BLOCK_MODULUS").unwrap_or("100".to_string()).parse().unwrap();
@@ -117,7 +121,7 @@ async fn main() -> Result<()> {
         let proof_folder = format!("{}/{}", OUTPUT_FOLDER, block_number);
         let input_file = format!("{}/{}.bin", INPUT_FOLDER, block_number);
 
-        let result = (|| async {
+        let result = async {
             // Get block data
             let block = rpc_provider
                 .get_block(block_number).await?
@@ -136,27 +140,29 @@ async fn main() -> Result<()> {
                 ethproofs_client.proof_proving(ethproofs_cluster_id, block_number).await?;
             }
 
-            info!("Generating proof for block number {}", block_number);
-            let result = generate_proof(block_number, args.disable_distributed).await?;
-            info!("Proof generated for block number {}, proving_time: {}s, cycles: {}", block_number, result.time / 1000, result.cycles);
+            // Generate the proof
+            if !args.no_proof {
+                info!("Generating proof for block number {}", block_number);
+                let result = generate_proof(block_number, args.disable_distributed).await?;
+                info!("Proof generated for block number {}, proving_time: {}s, cycles: {}", block_number, result.time / 1000, result.cycles);
+                // Submit the proof to EthProofs
+                if ethproofs_submit {
+                    let proof_base64 = get_proof_b64(block_number)?;
+                    ethproofs_client.proof_proved(ethproofs_cluster_id, block_number, result.time, result.cycles, proof_base64, result.id).await?;
+                    info!("Proof submitted to ethproofs for block number {}", block_number);
+                }
 
-            // Submit the proof to EthProofs
-            let proof_base64 = get_proof_b64(block_number)?;
-            if ethproofs_submit {
-                ethproofs_client.proof_proved(ethproofs_cluster_id, block_number, result.time, result.cycles, proof_base64, result.id).await?;
-                info!("Proof submitted to ethproofs for block number {}", block_number);
-            }
-
-            if args.block_submit_alert {
-                send_telegram_alert(
-                    &format!("Proof submitted for block number {}, txs: {}, gas: {}, cycles: {}, proving_time: {}s",
-                    block_number, block.transactions.len(), block.gas_used, result.cycles, result.time / 1000),
-                    AlertType::Success
-                ).await?;
+                if args.block_submit_alert {
+                    send_telegram_alert(
+                        &format!("Proof submitted for block number {}, txs: {}, gas: {}, cycles: {}, proving_time: {}s",
+                        block_number, block.transactions.len(), block.gas_used, result.cycles, result.time / 1000),
+                        AlertType::Success
+                    ).await?;
+                }
             }
             
             Ok::<(), anyhow::Error>(())
-        })().await;
+        }.await;
 
         // Clean up
         if !args.keep_output {

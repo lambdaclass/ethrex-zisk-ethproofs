@@ -21,8 +21,11 @@ env_logger = "0.11.8"
 ethers = { version = "2.0", features = ["ws"] }
 log = "0.4.26"
 reqwest = { version = "0.12.15", features = ["json"] }
+reth-chainspec = { git = "https://github.com/paradigmxyz/reth", tag = "v1.3.10", default-features = false }
 rsp-host-executor = { git = "https://github.com/succinctlabs/rsp.git" }
-rsp-client-executor ={ git = "https://github.com/succinctlabs/rsp.git" }
+rsp-client-executor = { git = "https://github.com/succinctlabs/rsp.git" }
+rsp-primitives = { git = "https://github.com/succinctlabs/rsp.git" }
+rsp-rpc-db ={ git = "https://github.com/succinctlabs/rsp.git" }
 # rsp-host-executor = { path = "../rsp/crates/executor/host"}
 # rsp-client-executor = { path = "../rsp/crates/executor/client"}
 serde = "1.0.127"
@@ -46,8 +49,11 @@ flate2.workspace = true
 futures-util.workspace = true
 log.workspace = true
 reqwest.workspace = true
+reth-chainspec.workspace = true
 rsp-host-executor.workspace = true
 rsp-client-executor.workspace = true
+rsp-primitives.workspace = true
+rsp-rpc-db.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tar.workspace = true
