@@ -38,10 +38,12 @@ zisk-ethproofs
 | Flag | Description |
 |------|-------------|
 | `-n, --no-ethproofs` | Disable proof status reporting and submission to Ethproofs. Only block proving will be performed |
+| `-p, --no-proof`| Disable block proof generation. Only generate input file |
 | `-b, --block-submit-alert` | Send a Telegram alert when a block proof is successfully submitted to Ethproofs. By default, only error/warning alerts are sent |
 | `-t, --test-block <TEST_BLOCK>` | Generate and submit the proof for a specific block only. Useful for testing or troubleshooting. Example: `-t 22137695` |
 | `-d, --disable-distributed` | Disable distributed proving. The proof will be generated using a single process |
 | `-k, --keep-input` | Keeps the block input file after proof generation (does not delete it) |
+| `-o, --keep-output`| Keeps the output folder where proof files are stored (does not delete it) |
 
 ### Folders
 
@@ -52,3 +54,13 @@ The following folders will be created during the execution of Zisk-Ethproofs:
 | `./input`    | Stores the input file generated for each block                                              |
 | `./proof`    | Stores the proof files generated for each block. A subfolder named after the block number will be created for each block |
 | `./log`      | Stores the log file generated for each block                                                |
+
+## License
+
+All crates in this monorepo are licensed under one of the following options:
+
+The Apache License, Version 2.0 (see LICENSE-APACHE or http://www.apache.org/licenses/LICENSE-2.0)
+
+The MIT License (see LICENSE-MIT or http://opensource.org/licenses/MIT)
+
+You may choose either license at your discretion.
