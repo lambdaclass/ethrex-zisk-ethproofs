@@ -144,9 +144,9 @@ async fn main() -> Result<()> {
             let proof_base64 = get_proof_b64(block_number)?;
             if ethproofs_submit {
                 ethproofs_client.proof_proved(ethproofs_cluster_id, block_number, result.time, result.cycles, proof_base64, result.id).await?;
+                info!("Proof submitted to ethproofs for block number {}", block_number);
             }
 
-            info!("Proof submitted to ethproofs for block number {}", block_number);
             if args.block_submit_alert {
                 send_telegram_alert(
                     &format!("Proof submitted for block number {}, txs: {}, gas: {}, cycles: {}, proving_time: {}s",
