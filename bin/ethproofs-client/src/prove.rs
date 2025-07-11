@@ -100,10 +100,9 @@ pub fn get_proof_b64(block_number: u64) -> Result<String> {
     // List of files to include in the archive
     let files = [
         format!(
-            "{}/{}/proofs/vadcop_final_proof.json",
+            "{}/{}/vadcop_final_proof.bin",
             OUTPUT_FOLDER, block_number
         ),
-        format!("{}/{}/publics.json", OUTPUT_FOLDER, block_number),
     ];
 
     // Create an in-memory buffer to hold the .tar.gz data
