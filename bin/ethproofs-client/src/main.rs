@@ -1,20 +1,20 @@
 use std::env;
-use std::io::Write;
 use std::{fs, path::PathBuf};
+use std::io::Write;
 
 use anyhow::Result;
-use chrono::Utc;
 use clap::Parser;
+use chrono::Utc;
 use dotenv::dotenv;
 use env_logger::{Builder, Env};
 use ethproofs_api::EthProofsApi;
-use futures_util::{SinkExt, StreamExt};
-use http::Request;
-use log::{debug, error, info, warn};
+use futures_util::{StreamExt, SinkExt};
+use log::{error, info, warn, debug};
 use tokio::fs::create_dir_all;
-use tokio::net::TcpStream;
 use tokio::time::{self, Duration, Instant};
+use tokio_tungstenite::{connect_async, WebSocketStream, MaybeTlsStream};
 use tokio_tungstenite::tungstenite::Message;
+use tokio::net::TcpStream;
 
 mod prove;
 mod telegram;
@@ -28,7 +28,7 @@ const LOG_FOLDER: &str = "log";
 const DEFAULT_INPUTS_FOLDER: &str = "upload_inputs";
 
 const PING_INTERVAL: Duration = Duration::from_secs(15);
-const IDLE_TIMEOUT: Duration = Duration::from_secs(30 * 60); // 30 min
+const IDLE_TIMEOUT: Duration  = Duration::from_secs(30 * 60); // 30 min
 
 // Command line arguments
 #[derive(Parser)]
@@ -72,13 +72,7 @@ fn parse_message(data: &[u8]) -> Option<(&str, &[u8])> {
 }
 
 async fn connect_ws(url: &str) -> anyhow::Result<WebSocketStream<MaybeTlsStream<TcpStream>>> {
-    let config = WebSocketConfig {
-        max_message_size: Some(64 * 1024 * 1024), // 64 MB
-        max_frame_size: Some(32 * 1024 * 1024),   // 32 MB
-        ..Default::default()
-    };
-    let request = Request::get(url).body(())?;
-    let (ws, _) = connect_async_with_config(request, Some(config)).await?;
+    let (ws, _) = connect_async(url).await?;
     Ok(ws)
 }
 
@@ -89,22 +83,14 @@ async fn main() -> Result<()> {
 
     // Check if LOG_RUST is set; if not, set it to "info"
     if std::env::var("RUST_LOG").is_err() {
-        unsafe {
-            std::env::set_var("RUST_LOG", "ethproofs_client=info");
-        }
+        std::env::set_var("RUST_LOG", "ethproofs_client=info");
     }
 
     // Initialize the logger
     Builder::from_env(Env::default())
         .format(|buf, record| {
             let timestamp = Utc::now().format("%Y-%m-%dT%H:%M:%S%.6fZ");
-            writeln!(
-                buf,
-                "{} [{}] - {}",
-                timestamp,
-                record.level(),
-                record.args()
-            )
+            writeln!(buf, "{} [{}] - {}", timestamp, record.level(), record.args())
         })
         .init();
 
@@ -116,10 +102,8 @@ async fn main() -> Result<()> {
     let mut ethproofs_cluster_id = 0_u32;
     if !args.no_ethproofs {
         // Initialize the EthProofsApi
-        let ethproofs_api_url =
-            env::var("ETHPROOFS_API_URL").expect("ETHPROOFS_API_URL must be set");
-        let ethproofs_api_token =
-            env::var("ETHPROOFS_API_TOKEN").expect("ETHPROOFS_API_TOKEN must be set");
+        let ethproofs_api_url = env::var("ETHPROOFS_API_URL").expect("ETHPROOFS_API_URL must be set");
+        let ethproofs_api_token = env::var("ETHPROOFS_API_TOKEN").expect("ETHPROOFS_API_TOKEN must be set");
         ethproofs_client = Some(EthProofsApi::new(ethproofs_api_url, ethproofs_api_token));
 
         // Cluster ID for the EthProofs API
@@ -133,8 +117,7 @@ async fn main() -> Result<()> {
     // Ensure output directory exists
     create_dir_all(&inputs_folder).await.unwrap();
 
-    let input_gen_server_url =
-        env::var("INPUT_GEN_SERVER_URL").expect("INPUT_GEN_SERVER_URL must be set");
+    let input_gen_server_url = env::var("INPUT_GEN_SERVER_URL").expect("INPUT_GEN_SERVER_URL must be set");
 
     // Loop to connect (re-connect) to the input generator server
     let mut attempt: u32 = 0;
@@ -190,7 +173,7 @@ async fn main() -> Result<()> {
                                     info!("Received queued command for block {}", block_number);
 
                                     if let Some(client) = &ethproofs_client {
-                                        let _ = client.proof_queued(ethproofs_cluster_id, block_number).await;
+                                        client.proof_queued(ethproofs_cluster_id, block_number).await?;
                                     }
                                 }
                                 _ => {
