@@ -1,20 +1,23 @@
 use std::env;
-use std::{fs, path::PathBuf};
 use std::io::Write;
+use std::{fs, path::PathBuf};
 
 use anyhow::Result;
-use clap::Parser;
 use chrono::Utc;
+use clap::Parser;
 use dotenv::dotenv;
 use env_logger::{Builder, Env};
 use ethproofs_api::EthProofsApi;
-use futures_util::{StreamExt, SinkExt};
-use log::{error, info, warn, debug};
+use futures_util::{SinkExt, StreamExt};
+use log::{debug, error, info, warn};
 use tokio::fs::create_dir_all;
-use tokio::time::{self, Duration, Instant};
-use tokio_tungstenite::{connect_async, WebSocketStream, MaybeTlsStream};
-use tokio_tungstenite::tungstenite::Message;
 use tokio::net::TcpStream;
+use tokio::time::{self, Duration, Instant};
+use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
+use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::{
+    connect_async, connect_async_with_config, MaybeTlsStream, WebSocketStream,
+};
 
 mod prove;
 mod telegram;
@@ -28,7 +31,7 @@ const LOG_FOLDER: &str = "log";
 const DEFAULT_INPUTS_FOLDER: &str = "upload_inputs";
 
 const PING_INTERVAL: Duration = Duration::from_secs(15);
-const IDLE_TIMEOUT: Duration  = Duration::from_secs(30 * 60); // 30 min
+const IDLE_TIMEOUT: Duration = Duration::from_secs(30 * 60); // 30 min
 
 // Command line arguments
 #[derive(Parser)]
@@ -72,7 +75,13 @@ fn parse_message(data: &[u8]) -> Option<(&str, &[u8])> {
 }
 
 async fn connect_ws(url: &str) -> anyhow::Result<WebSocketStream<MaybeTlsStream<TcpStream>>> {
-    let (ws, _) = connect_async(url).await?;
+    let stream = TcpStream::connect("example.com:80").await?;
+    let mut config = WebSocketConfig::default();
+    config.max_message_size = Some(32 * 1024 * 1024); // 32 MB
+    config.max_frame_size = Some(8 * 1024 * 1024); // 8 MB per frame (helps fragmentation)
+
+    let (ws, _) = connect_async_with_config(url, Some(config), false).await?;
+
     Ok(ws)
 }
 
@@ -90,7 +99,13 @@ async fn main() -> Result<()> {
     Builder::from_env(Env::default())
         .format(|buf, record| {
             let timestamp = Utc::now().format("%Y-%m-%dT%H:%M:%S%.6fZ");
-            writeln!(buf, "{} [{}] - {}", timestamp, record.level(), record.args())
+            writeln!(
+                buf,
+                "{} [{}] - {}",
+                timestamp,
+                record.level(),
+                record.args()
+            )
         })
         .init();
 
@@ -102,8 +117,10 @@ async fn main() -> Result<()> {
     let mut ethproofs_cluster_id = 0_u32;
     if !args.no_ethproofs {
         // Initialize the EthProofsApi
-        let ethproofs_api_url = env::var("ETHPROOFS_API_URL").expect("ETHPROOFS_API_URL must be set");
-        let ethproofs_api_token = env::var("ETHPROOFS_API_TOKEN").expect("ETHPROOFS_API_TOKEN must be set");
+        let ethproofs_api_url =
+            env::var("ETHPROOFS_API_URL").expect("ETHPROOFS_API_URL must be set");
+        let ethproofs_api_token =
+            env::var("ETHPROOFS_API_TOKEN").expect("ETHPROOFS_API_TOKEN must be set");
         ethproofs_client = Some(EthProofsApi::new(ethproofs_api_url, ethproofs_api_token));
 
         // Cluster ID for the EthProofs API
@@ -117,7 +134,8 @@ async fn main() -> Result<()> {
     // Ensure output directory exists
     create_dir_all(&inputs_folder).await.unwrap();
 
-    let input_gen_server_url = env::var("INPUT_GEN_SERVER_URL").expect("INPUT_GEN_SERVER_URL must be set");
+    let input_gen_server_url =
+        env::var("INPUT_GEN_SERVER_URL").expect("INPUT_GEN_SERVER_URL must be set");
 
     // Loop to connect (re-connect) to the input generator server
     let mut attempt: u32 = 0;
