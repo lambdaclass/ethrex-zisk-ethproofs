@@ -1,15 +1,21 @@
+use std::io::Write;
+use std::{env, path::Path};
 use std::{fs, path::PathBuf};
-use std::{env, path::Path, time::Instant, sync::Arc};
 
 use anyhow::{Context, Result};
 use dotenv::dotenv;
-use ethers::providers::{Middleware, Provider, Ws};
+use ethrex_common::types::block_execution_witness::ExecutionWitness;
+use ethrex_common::types::{Block, BlockHeader, ChainConfig, ELASTICITY_MULTIPLIER};
+use ethrex_config::networks::{
+    Network, PublicNetwork, HOLESKY_CHAIN_ID, HOODI_CHAIN_ID, MAINNET_CHAIN_ID, SEPOLIA_CHAIN_ID,
+};
+use ethrex_guest::input::ProgramInput;
+use ethrex_rlp::decode::RLPDecode;
+use ethrex_rpc::debug::execution_witness::execution_witness_from_rpc_chain_config;
+use ethrex_rpc::types::block_identifier::BlockIdentifier;
+use ethrex_rpc::EthClient;
 use futures_util::{SinkExt, StreamExt};
 use log::{error, info, warn};
-use rsp_host_executor::EthHostExecutor;
-use rsp_primitives::genesis::Genesis;
-use rsp_provider::create_provider;
-use rsp_rpc_db::RpcDb;
 use tokio::{
     net::{TcpListener, TcpStream},
     sync::broadcast::{self, Receiver, Sender},
@@ -20,33 +26,61 @@ use url::Url;
 
 const WS_ADDR: &str = "0.0.0.0:8765";
 
+async fn get_block(eth_client: &EthClient, block_number: u64) -> Result<Block> {
+    let rpc_block = eth_client
+        .get_block_by_number(BlockIdentifier::Number(block_number), true)
+        .await?;
+
+    rpc_block
+        .try_into()
+        .map_err(|e| anyhow::anyhow!("Error converting RPC block: {:?}", e))
+}
+
+async fn get_block_execution_witness(
+    eth_client: &EthClient,
+    block_number: u64,
+    chain_config: ChainConfig,
+) -> Result<ExecutionWitness> {
+    let rpc_execution_witness = eth_client
+        .get_witness(BlockIdentifier::Number(block_number), None)
+        .await?;
+
+    let initial_state_root = rpc_execution_witness
+        .headers
+        .iter()
+        .map(|h| BlockHeader::decode(h).unwrap())
+        .find(|h| h.number == block_number - 1)
+        .map(|h| h.state_root)
+        .context("failed to get initial state root")?;
+
+    execution_witness_from_rpc_chain_config(
+        rpc_execution_witness,
+        chain_config,
+        block_number,
+        initial_state_root,
+    )
+    .context("failed to create execution witness")
+}
+
 /// Generate the input file for the given block number and return the time taken in milliseconds
-pub async fn generate_input_file(block_number: u64, inputs_folder: String) -> Result<u128> {
-    // Load RPC URL from environment variable
-    let rpc_url = env::var("RPC_URL").expect("RPC_URL must be set");
+pub async fn generate_input_file(
+    eth_client: &EthClient,
+    chain_config: ChainConfig,
+    block: Block,
+    block_number: u64,
+    inputs_folder: String,
+) -> Result<u128> {
+    let start = std::time::Instant::now();
 
-    // Create the RPC provider and database.
-    let provider = create_provider(
-        Url::parse(rpc_url.as_str())
-            .expect("Invalid RPC URL"),
-    );
-    let rpc_db = RpcDb::new(provider.clone(), block_number - 1);
-    let genesis = Genesis::Mainnet;
+    let block_execution_witness =
+        get_block_execution_witness(eth_client, block_number, chain_config).await?;
 
-    let executor = EthHostExecutor::eth(
-        Arc::new(
-            (&genesis).try_into().expect("Failed to convert genesis block into the required type"),
-        ),
-        None,
-    );
-
-    let start = Instant::now();
-
-    // Execute the host to get the client input
-    let input = executor
-        .execute(block_number, &rpc_db, &provider, genesis.clone(), None, false)
-        .await
-        .expect("Failed to execute client");
+    let ethrex_guest_input = ProgramInput {
+        blocks: vec![block],
+        execution_witness: block_execution_witness,
+        elasticity_multiplier: ELASTICITY_MULTIPLIER,
+        fee_configs: None,
+    };
 
     // Create the inputs folder if it doesn't exist
     let input_folder = Path::new(&inputs_folder);
@@ -55,7 +89,8 @@ pub async fn generate_input_file(block_number: u64, inputs_folder: String) -> Re
     // Serialize the client input to a binary file
     let input_path = input_folder.join(format!("{}.bin", block_number));
     let mut input_file = std::fs::File::create(input_path.clone())?;
-    bincode::serialize_into(&mut input_file, &input)?;
+    let ethrex_zisk_guest_input = rkyv::to_bytes::<rkyv::rancor::Error>(&ethrex_guest_input)?;
+    input_file.write_all(&ethrex_zisk_guest_input)?;
 
     let input_file_time = start.elapsed().as_millis();
 
@@ -64,60 +99,71 @@ pub async fn generate_input_file(block_number: u64, inputs_folder: String) -> Re
 
 /// Listens for new blocks on the Ethereum network and generates input files for them
 async fn block_listener(tx: Sender<String>) -> Result<()> {
-    let rpc_ws_url = env::var("RPC_WS_URL").expect("RPC_WS_URL must be set");
+    let rpc_https_url = env::var("RPC_URL").expect("RPC_URL must be set");
     let inputs_folder = env::var("INPUTS_FOLDER").unwrap_or("inputs".to_string());
     let block_modulus: u64 = env::var("BLOCK_MODULUS")
         .unwrap_or("100".to_string())
         .parse()
         .expect("BLOCK_MODULUS must be a valid integer");
 
-    loop {
-        let mut block_number: u64 = 0;
-        let rpc_provider = Provider::<Ws>::connect(rpc_ws_url.clone())
-            .await
-            .context("Failed to connect to WS RPC provider")?;
+    let eth_client = EthClient::new(Url::parse(&rpc_https_url).unwrap()).unwrap();
 
-        let mut stream = rpc_provider.subscribe_blocks().await?;
+    let chain_id = eth_client.get_chain_id().await.unwrap().as_u64();
+
+    let network = match chain_id {
+        MAINNET_CHAIN_ID => Network::PublicNetwork(PublicNetwork::Mainnet),
+        HOLESKY_CHAIN_ID => Network::PublicNetwork(PublicNetwork::Holesky),
+        HOODI_CHAIN_ID => Network::PublicNetwork(PublicNetwork::Hoodi),
+        SEPOLIA_CHAIN_ID => Network::PublicNetwork(PublicNetwork::Sepolia),
+        _ => panic!("Unsupported chain id: {chain_id}"),
+    };
+
+    let chain_config = network.get_genesis()?.config;
+
+    loop {
         info!("Listening for new blocks on Ethereum Mainnet...");
 
-        while let Some(block) = stream.next().await {
-            if let Some(number) = block.number {
-                block_number = number.as_u64();
-            } else {
-                warn!("Received block without number, skipping...");
-                continue;
-            }
+        let mut block_number = eth_client.get_block_number().await.unwrap().as_u64();
 
-            if block_number % block_modulus == 0 {
-                info!("Received block number {}, processing...", block_number);
-                break;
-            } else {
-                info!("Received block number {}, skipping...", block_number);
-            }
+        while block_number % block_modulus != 0 {
+            info!("Received block number {}, skipping...", block_number);
+
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+            block_number = eth_client.get_block_number().await.unwrap().as_u64();
         }
 
-        if let Err(e) = (|| async {
-            let block = rpc_provider
-                .get_block(block_number).await?
-                .ok_or_else(|| anyhow::anyhow!("Block {} not found", block_number))?;
+        info!("Received block number {}, processing...", block_number);
+
+        if let Err(e) = async {
+            let block = get_block(&eth_client, block_number).await?;
 
             if tx.send(format!("queued {}", block_number)).is_err() {
-                info!("No active receivers, skipping input file generation for block {}", block_number);
+                info!(
+                    "No active receivers, skipping input file generation for block {}",
+                    block_number
+                );
                 return Ok::<(), anyhow::Error>(());
             }
 
             info!(
                 "Generating input file for block {}, txs: {}, gas: {}",
                 block_number,
-                block.transactions.len(),
-                block.gas_used
+                block.body.transactions.len(),
+                block.header.gas_used
             );
 
-            let input_file_time = generate_input_file(block_number, inputs_folder.clone()).await?;
+            let input_file_time = generate_input_file(
+                &eth_client,
+                chain_config,
+                block,
+                block_number,
+                inputs_folder.clone(),
+            )
+            .await?;
             info!(
                 "Input file generated for block {}, time: {}ms",
-                block_number,
-                input_file_time
+                block_number, input_file_time
             );
 
             if tx.send(format!("input {}.bin", block_number)).is_err() {
@@ -125,7 +171,9 @@ async fn block_listener(tx: Sender<String>) -> Result<()> {
             }
 
             Ok::<(), anyhow::Error>(())
-        })().await {
+        }
+        .await
+        {
             error!("Error processing block {}, error: {:?}", block_number, e);
         }
     }
@@ -162,7 +210,7 @@ async fn handle_client(stream: TcpStream, mut rx: Receiver<String>) {
             ["input", file] => {
                 info!("Sending input file: {}", file);
 
-                let filepath = PathBuf::from(&inputs_folder).join(&file);
+                let filepath = PathBuf::from(&inputs_folder).join(file);
                 match fs::read(&filepath) {
                     Ok(content) => {
                         let payload = format!("{}\n", file)
@@ -181,7 +229,7 @@ async fn handle_client(stream: TcpStream, mut rx: Receiver<String>) {
                     Err(e) => {
                         error!("Error reading input file {}: {}", file, e);
                     }
-                }                
+                }
             }
             _ => {
                 error!("Unknown command received: {}", command);
