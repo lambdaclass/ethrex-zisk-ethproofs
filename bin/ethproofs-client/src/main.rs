@@ -9,17 +9,19 @@ use dotenv::dotenv;
 use env_logger::{Builder, Env};
 use ethproofs_api::EthProofsApi;
 use futures_util::{SinkExt, StreamExt};
-use http::Request;
 use log::{debug, error, info, warn};
 use tokio::fs::create_dir_all;
 use tokio::net::TcpStream;
 use tokio::time::{self, Duration, Instant};
+use tokio_tungstenite::tungstenite::http::Request;
 use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::{connect_async_with_config, MaybeTlsStream, WebSocketStream};
 
 mod prove;
 mod telegram;
 use prove::{generate_proof, get_proof_b64};
 use telegram::{send_telegram_alert, AlertType};
+use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 
 // Constants
 const OUTPUT_FOLDER: &str = "output";
@@ -78,7 +80,7 @@ async fn connect_ws(url: &str) -> anyhow::Result<WebSocketStream<MaybeTlsStream<
         ..Default::default()
     };
     let request = Request::get(url).body(())?;
-    let (ws, _) = connect_async_with_config(request, Some(config)).await?;
+    let (ws, _) = connect_async_with_config(request, Some(config), false).await?;
     Ok(ws)
 }
 
