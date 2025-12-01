@@ -77,8 +77,8 @@ fn parse_message(data: &[u8]) -> Option<(&str, &[u8])> {
 async fn connect_ws(url: &str) -> anyhow::Result<WebSocketStream<MaybeTlsStream<TcpStream>>> {
     let stream = TcpStream::connect("example.com:80").await?;
     let mut config = WebSocketConfig::default();
-    config.max_message_size = Some(32 * 1024 * 1024); // 32 MB
-    config.max_frame_size = Some(8 * 1024 * 1024); // 8 MB per frame (helps fragmentation)
+    config.max_message_size = Some(64 * 1024 * 1024); // 32 MB
+    config.max_frame_size = Some(21 * 1024 * 1024); // 21 MB per frame (helps fragmentation)
 
     let (ws, _) = connect_async_with_config(url, Some(config), false).await?;
 
