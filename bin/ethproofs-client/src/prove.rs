@@ -223,7 +223,7 @@ pub async fn generate_proof(
             format!("{}/{}-result.json", output_folder, block_number)
         };
 
-        let file = File::open(file_path).context(format!(
+        let file = File::open(file_path.clone()).context(format!(
             "Failed to open {} for block number {}",
             file_path, block_number
         ))?;
