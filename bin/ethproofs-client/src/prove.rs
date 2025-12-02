@@ -217,12 +217,16 @@ pub async fn generate_proof(
     );
 
     if (no_server && _status.success()) || proving {
-        let file = File::open(format!("{}/{}-result.json", output_folder, block_number)).context(
-            format!(
-                "Failed to open result.json for block number {}",
-                block_number
-            ),
-        )?;
+        let file_path = if no_server {
+            format!("{}/{}/result.json", output_folder, block_number)
+        } else {
+            format!("{}/{}-result.json", output_folder, block_number)
+        };
+
+        let file = File::open(file_path).context(format!(
+            "Failed to open result.json for block number {}",
+            block_number
+        ))?;
 
         let reader = BufReader::new(file);
         let proof_result: ProofResult = serde_json::from_reader(reader)?;
