@@ -1,11 +1,17 @@
-use std::{env, fs::{self, create_dir_all, File}, io::{BufRead, BufReader, Write}, path::Path, process::{Command,Stdio}};
-use std::thread;
-use std::time::Duration;
 use anyhow::{anyhow, Context, Ok, Result};
 use base64::{engine::general_purpose, Engine};
 use log::{debug, info};
 use serde::Deserialize;
 use serde_json::Value;
+use std::thread;
+use std::time::Duration;
+use std::{
+    env,
+    fs::{self, create_dir_all, File},
+    io::{BufRead, BufReader, Write},
+    path::Path,
+    process::{Command, Stdio},
+};
 
 use crate::{LOG_FOLDER, OUTPUT_FOLDER, PROGRAM_FOLDER};
 
@@ -58,7 +64,10 @@ pub async fn wait_prove_done() -> Result<()> {
                     let result = json.get("result").and_then(|r| r.as_str());
                     let status = json.get("status").and_then(|c| c.as_str());
 
-                    debug!("Parsed JSON: node: {:?}, result: {:?}, status: {:?}", node, result, status);
+                    debug!(
+                        "Parsed JSON: node: {:?}, result: {:?}, status: {:?}",
+                        node, result, status
+                    );
                     if node == Some(0) && result == Some("ok") && status == Some("idle") {
                         return Ok(());
                     }
@@ -74,7 +83,12 @@ pub async fn wait_prove_done() -> Result<()> {
     }
 }
 
-pub async fn generate_proof(block_number: u64, no_distributed: bool, no_server: bool, input_folder: String) -> Result<ProofResult> {
+pub async fn generate_proof(
+    block_number: u64,
+    no_distributed: bool,
+    no_server: bool,
+    input_folder: String,
+) -> Result<ProofResult> {
     let elf_file = format!(
         "{}/{}",
         PROGRAM_FOLDER,
@@ -90,8 +104,7 @@ pub async fn generate_proof(block_number: u64, no_distributed: bool, no_server: 
         env::var("DISTRIBUTED_PROVE_PROCESSES").expect("DISTRIBUTED_PROVE_PROCESSES must be set");
     let num_threads =
         env::var("DISTRIBUTED_PROVE_THREADS").expect("DISTRIBUTED_PROVE_THREADS must be set");
-    let prove_params =
-        env::var("PROVE_PARAMS").unwrap_or_default();
+    let prove_params = env::var("PROVE_PARAMS").unwrap_or_default();
 
     let command = if no_distributed {
         if no_server {
@@ -124,18 +137,27 @@ pub async fn generate_proof(block_number: u64, no_distributed: bool, no_server: 
     };
 
     let start = std::time::Instant::now();
-    debug!("Starting proof generation for block number {} with command: {}", block_number, command);
+    debug!(
+        "Starting proof generation for block number {} with command: {}",
+        block_number, command
+    );
     let mut child = Command::new("sh")
         .arg("-c")
         .arg(command)
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
         .spawn()?;
-    debug!("Proof generation command started for block number {}", block_number);
+    debug!(
+        "Proof generation command started for block number {}",
+        block_number
+    );
 
     let stdout = child.stdout.take().expect("Failed to capture stdout");
     let reader = BufReader::new(stdout);
-    debug!("Waiting for proof generation to start for block number {}", block_number);
+    debug!(
+        "Waiting for proof generation to start for block number {}",
+        block_number
+    );
 
     let mut proving = false;
     let mut captured_output = Vec::new();
@@ -154,9 +176,15 @@ pub async fn generate_proof(block_number: u64, no_distributed: bool, no_server: 
                 let result = json.get("result").and_then(|r| r.as_str());
                 let code = json.get("code").and_then(|c| c.as_u64());
 
-                info!("Parsed JSON: node: {:?}, result: {:?}, code: {:?}", node, result, code);
+                info!(
+                    "Parsed JSON: node: {:?}, result: {:?}, code: {:?}",
+                    node, result, code
+                );
                 if node == Some(0) && result == Some("in_progress") && code == Some(0) {
-                    info!("Proof generation accepted for block number {}", block_number);
+                    info!(
+                        "Proof generation accepted for block number {}",
+                        block_number
+                    );
                     proving = true;
                     break;
                 }
@@ -165,21 +193,32 @@ pub async fn generate_proof(block_number: u64, no_distributed: bool, no_server: 
     }
 
     if !proving {
-        return Err(anyhow!("Failed to start proof generation for block number {}", block_number));
+        return Err(anyhow!(
+            "Failed to start proof generation for block number {}",
+            block_number
+        ));
     }
 
     let _status = child.wait()?;
 
-    info!("Waiting for proof generation to complete for block number {}", block_number);
+    info!(
+        "Waiting for proof generation to complete for block number {}",
+        block_number
+    );
     wait_prove_done().await?;
-    info!("Proof generated for block number {}, time: {}ms", block_number, start.elapsed().as_millis());
+    info!(
+        "Proof generated for block number {}, time: {}ms",
+        block_number,
+        start.elapsed().as_millis()
+    );
 
     if proving {
-        let file = File::open(format!("{}/{}-result.json", output_folder, block_number))
-            .context(format!(
+        let file = File::open(format!("{}/{}-result.json", output_folder, block_number)).context(
+            format!(
                 "Failed to open result.json for block number {}",
                 block_number
-            ))?;
+            ),
+        )?;
 
         let reader = BufReader::new(file);
         let proof_result: ProofResult = serde_json::from_reader(reader)?;
@@ -189,17 +228,28 @@ pub async fn generate_proof(block_number: u64, no_distributed: bool, no_server: 
         let mut log_file = File::create(&log_path)?;
         write!(log_file, "{}", captured_output.concat())?;
 
-        Err(anyhow!("Proof verification failed for block number {}. Log saved at {}", block_number, log_path))
+        Err(anyhow!(
+            "Proof verification failed for block number {}. Log saved at {}",
+            block_number,
+            log_path
+        ))
     }
 }
 
 /// Get the proof file for the given block number and return it as base64 encoded string
 pub fn get_proof_b64(block_number: u64) -> Result<String> {
     let start = std::time::Instant::now();
-    let proof_file = format!("{}/{}/{}-vadcop_final_proof.compressed.bin", OUTPUT_FOLDER, block_number, block_number);
+    let proof_file = format!(
+        "{}/{}/{}-vadcop_final_proof.compressed.bin",
+        OUTPUT_FOLDER, block_number, block_number
+    );
     let buffer = fs::read(proof_file)?;
     let base64_encoded = general_purpose::STANDARD.encode(&buffer);
-    info!("Compressed proof file for block number {} encoded to base64 in {}ms", block_number, start.elapsed().as_millis());
+    info!(
+        "Compressed proof file for block number {} encoded to base64 in {}ms",
+        block_number,
+        start.elapsed().as_millis()
+    );
 
     Ok(base64_encoded)
 }
