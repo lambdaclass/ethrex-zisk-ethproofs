@@ -192,7 +192,7 @@ pub async fn generate_proof(
         }
     }
 
-    if !proving {
+    if !no_server && !proving {
         return Err(anyhow!(
             "Failed to start proof generation for block number {}",
             block_number
@@ -205,14 +205,18 @@ pub async fn generate_proof(
         "Waiting for proof generation to complete for block number {}",
         block_number
     );
-    wait_prove_done().await?;
+
+    if !no_server {
+        wait_prove_done().await?;
+    }
+
     info!(
         "Proof generated for block number {}, time: {}ms",
         block_number,
         start.elapsed().as_millis()
     );
 
-    if proving {
+    if (no_server && _status.success()) || proving {
         let file = File::open(format!("{}/{}-result.json", output_folder, block_number)).context(
             format!(
                 "Failed to open result.json for block number {}",
