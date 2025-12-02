@@ -218,14 +218,14 @@ pub async fn generate_proof(
 
     if (no_server && _status.success()) || proving {
         let file_path = if no_server {
-            format!("{}/{}/result.json", output_folder, block_number)
+            format!("{}/result.json", output_folder)
         } else {
             format!("{}/{}-result.json", output_folder, block_number)
         };
 
         let file = File::open(file_path).context(format!(
-            "Failed to open result.json for block number {}",
-            block_number
+            "Failed to open {} for block number {}",
+            file_path, block_number
         ))?;
 
         let reader = BufReader::new(file);
