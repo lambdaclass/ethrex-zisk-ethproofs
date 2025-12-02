@@ -15,9 +15,7 @@ use tokio::net::TcpStream;
 use tokio::time::{self, Duration, Instant};
 use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 use tokio_tungstenite::tungstenite::Message;
-use tokio_tungstenite::{
-    connect_async, connect_async_with_config, MaybeTlsStream, WebSocketStream,
-};
+use tokio_tungstenite::{connect_async_with_config, MaybeTlsStream, WebSocketStream};
 
 mod prove;
 mod telegram;
@@ -75,7 +73,6 @@ fn parse_message(data: &[u8]) -> Option<(&str, &[u8])> {
 }
 
 async fn connect_ws(url: &str) -> anyhow::Result<WebSocketStream<MaybeTlsStream<TcpStream>>> {
-    let stream = TcpStream::connect("example.com:80").await?;
     let mut config = WebSocketConfig::default();
     config.max_message_size = Some(64 * 1024 * 1024); // 32 MB
     config.max_frame_size = Some(21 * 1024 * 1024); // 21 MB per frame (helps fragmentation)
@@ -165,6 +162,8 @@ async fn main() -> Result<()> {
 
         let mut queued_start = std::time::Instant::now();
 
+        let mut last_proved_block: u64 = 0;
+
         loop {
             tokio::select! {
                 // 1) Reading messages from server
@@ -225,6 +224,11 @@ async fn main() -> Result<()> {
                                     }
                                 };
 
+                                if block_number == last_proved_block {
+                                    warn!("Block number {} has already been proved, skipping", block_number);
+                                    continue;
+                                }
+
                                 // Report to EthProofs that we are generating the proof
                                 if let Some(client) = &ethproofs_client {
                                     let start = std::time::Instant::now();
@@ -235,6 +239,8 @@ async fn main() -> Result<()> {
                                 info!("Generating proof for block number {}", block_number);
                                 let result = generate_proof(block_number, args.disable_distributed, args.no_server, inputs_folder.clone()).await?;
                                 info!("Proof generated for block number {}, proving_time: {}s, cycles: {}", block_number, result.time / 1000, result.cycles);
+
+                                last_proved_block = block_number;
 
                                 // Submit the proof to EthProofs
                                 if let Some(client) = &ethproofs_client {
