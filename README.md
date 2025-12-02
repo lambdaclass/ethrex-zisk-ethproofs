@@ -51,7 +51,7 @@
 
     tar -xzf zisk-provingkey-0.14.0.tar.gz
 
-    mv provingKey $HOME/.zisk/provingkey
+    mv provingKey $HOME/.zisk/provingKey
     ```
 
 2. Run the following in the root of the project to generate the ROM setup:
