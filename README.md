@@ -7,6 +7,7 @@
 
 - Rust and Cargo (install via [rustup](https://rustup.rs/))
 - ZisK toolchain v0.14.0 (see instructions below)
+- CUDA Toolkit 12.9 or 13.0 (install via [NVIDIA's guide](https://developer.nvidia.com/cuda-toolkit-archive))
 
 ## How to run
 
@@ -59,7 +60,7 @@
     cargo-zisk rom-setup -e bin/ethproofs-client/elf/ethrex-f1bd0d7-zisk-0.14.0-guest.elf
     ```
 
-## 3. Run the input generator server
+### 3. Run the input generator server
 
 In a terminal, run the following from the root of the project:
 
