@@ -128,7 +128,9 @@ async fn block_listener(tx: Sender<String>) -> Result<()> {
         while block_number % block_modulus != 0 {
             let next_block_number = block_number.next_multiple_of(block_modulus);
 
-            let wait_seconds = next_block_number.saturating_sub(block_number) * 12;
+            // Wait 2 seconds less than the expected to avoid missing the block
+            let wait_seconds =
+                (next_block_number.saturating_sub(block_number) * 12).saturating_sub(2);
 
             info!(
                 "Received block number {block_number}, waiting {wait_seconds} seconds until block {next_block_number}...",
