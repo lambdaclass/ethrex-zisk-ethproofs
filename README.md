@@ -66,7 +66,7 @@ In a terminal, run the following from the root of the project:
 ```bash
 cd bin/input-gen-server
 
-BLOCK_MODULUS=<RPC_URL> RPC_URL=<RPC_RUL> cargo run --release 
+BLOCK_MODULUS=<BLOCK_MODULUS> RPC_URL=<RPC_URL> cargo run --release 
 ```
 
 > [!NOTE]
@@ -93,6 +93,8 @@ cargo run --release --disable-distributed --no-server --keep-input
 > - Replace `<ETHPROOFS_API_TOKEN>` with your EthProofs API token.
 > - Replace `<ETHPROOFS_API_URL>` with your EthProofs API (e.g. <https://staging--ethproofs.netlify.app/api/v0>).
 > - Replace `<RPC_URL>` with your Ethereum Mainnet node HTTP JSON-RPC URL.
+> - Remove the `RUST_LOG=debug` part if you don't want debug logs (they're useful and not too verbose though).
+> - Remove the `--keep-input` flag if you don't want to keep the input files after proving (useful for debugging).
 >
 > As said before, these instructions are for running an EthProofs client relying on the `cargo-zisk prove` command using a single GPU,hence the `--disable-distributed` and `--no-server` flags. Instructions for running this using distributed proving and server mode will be provided in the future.
 
