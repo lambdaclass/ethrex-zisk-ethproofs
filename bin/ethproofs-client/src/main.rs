@@ -190,7 +190,7 @@ async fn main() -> Result<()> {
                                     info!("Received queued command for block {}", block_number);
 
                                     if let Some(client) = &ethproofs_client {
-                                        client.proof_queued(ethproofs_cluster_id, block_number).await?;
+                                        let _ = client.proof_queued(ethproofs_cluster_id, block_number).await.inspect_err(|err| error!("/proof/queued error: {err}"));
                                     }
                                 }
                                 _ => {
