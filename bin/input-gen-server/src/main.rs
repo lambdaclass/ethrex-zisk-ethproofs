@@ -126,9 +126,15 @@ async fn block_listener(tx: Sender<String>) -> Result<()> {
         let mut block_number = eth_client.get_block_number().await.unwrap().as_u64();
 
         while block_number % block_modulus != 0 {
-            info!("Received block number {}, skipping...", block_number);
+            let next_block_number = block_number.next_multiple_of(block_modulus);
 
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            let wait_seconds = next_block_number.saturating_sub(block_number) * 12;
+
+            info!(
+                "Received block number {block_number}, waiting {wait_seconds} seconds until block {next_block_number}...",
+            );
+
+            tokio::time::sleep(std::time::Duration::from_secs(wait_seconds)).await;
 
             block_number = eth_client.get_block_number().await.unwrap().as_u64();
         }
