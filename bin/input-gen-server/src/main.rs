@@ -133,6 +133,8 @@ async fn block_listener(tx: Sender<String>) -> Result<()> {
             block_number = eth_client.get_block_number().await.unwrap().as_u64();
         }
 
+        let start = std::time::Instant::now();
+
         info!("Received block number {}, processing...", block_number);
 
         if let Err(e) = async {
@@ -176,6 +178,10 @@ async fn block_listener(tx: Sender<String>) -> Result<()> {
         {
             error!("Error processing block {}, error: {:?}", block_number, e);
         }
+
+        // Wait until 12 seconds have passed to avoid getting the same block again
+        tokio::time::sleep(std::time::Duration::from_secs(12).saturating_sub(start.elapsed()))
+            .await;
     }
 }
 
