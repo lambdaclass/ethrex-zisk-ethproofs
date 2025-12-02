@@ -237,8 +237,8 @@ async fn main() -> Result<()> {
                                 info!("Proof generated for block number {}, proving_time: {}s, cycles: {}", block_number, result.time / 1000, result.cycles);
 
                                 // Submit the proof to EthProofs
-                                let proof_base64 = get_proof_b64(block_number)?;
                                 if let Some(client) = &ethproofs_client {
+                                    let proof_base64 = get_proof_b64(block_number, args.no_server)?;
                                     let start = std::time::Instant::now();
                                     client.proof_proved(ethproofs_cluster_id, block_number, result.time, result.cycles, proof_base64, result.id).await?;
                                     debug!("Proof submitted to ethproofs for block number {}, submit_time: {} ms", block_number, start.elapsed().as_millis());

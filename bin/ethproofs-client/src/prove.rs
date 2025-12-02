@@ -245,12 +245,19 @@ pub async fn generate_proof(
 }
 
 /// Get the proof file for the given block number and return it as base64 encoded string
-pub fn get_proof_b64(block_number: u64) -> Result<String> {
+pub fn get_proof_b64(block_number: u64, no_server: bool) -> Result<String> {
     let start = std::time::Instant::now();
-    let proof_file = format!(
-        "{}/{}/{}-vadcop_final_proof.compressed.bin",
-        OUTPUT_FOLDER, block_number, block_number
-    );
+    let proof_file = if no_server {
+        format!(
+            "{}/{}/vadcop_final_proof.compressed.bin",
+            OUTPUT_FOLDER, block_number
+        )
+    } else {
+        format!(
+            "{}/{}/{}-vadcop_final_proof.compressed.bin",
+            OUTPUT_FOLDER, block_number, block_number
+        )
+    };
     let buffer = fs::read(proof_file)?;
     let base64_encoded = general_purpose::STANDARD.encode(&buffer);
     info!(
