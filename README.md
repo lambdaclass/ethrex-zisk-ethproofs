@@ -82,11 +82,13 @@ In another terminal, run the following from the root of the project:
 ```shell
 cd bin/ethproofs-client
 
+cargo install --path .
+
 RUST_LOG=debug \
 ETHPROOFS_API_TOKEN=<ETHPROOFS_API_TOKEN> \
 ETHPROOFS_API_URL=<ETHPROOFS_API_URL> \
 RPC_URL=<RPC_URL> \
-cargo run --release --disable-distributed --no-server --keep-input
+ethproofs-client --disable-distributed --no-server --keep-input
 ```
 
 > [!NOTE]
